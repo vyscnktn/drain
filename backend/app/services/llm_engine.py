@@ -3,9 +3,12 @@ import time
 import logging
 import re
 import random
+import concurrent.futures
 from dotenv import load_dotenv, find_dotenv
 from google import genai
+from google.genai import types
 from openai import OpenAI
+from fastapi import HTTPException, status
 from typing import List, Tuple, Optional, Union, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -19,25 +22,30 @@ else:
 
 gemini_key = os.environ.get("GEMINI_API_KEY")
 
+PROVIDER_TIMEOUT: float = 25.0
+CHAIN_TIMEOUT: float = 45.0
+OVERLOAD_MESSAGE: str = "Der Dienst ist gerade überlastet. Bitte versuche es gleich erneut."
+
 
 # ─── Client factories ────────────────────────────────────────────────────────
 
-def get_gemini_client() -> Optional[genai.Client]:
+def get_gemini_client(timeout: float = PROVIDER_TIMEOUT) -> Optional[genai.Client]:
     """Primary: Google Gemini via official google.genai SDK."""
     key = os.environ.get("GEMINI_API_KEY")
     if key:
-        return genai.Client(api_key=key)
+        http_opts = types.HttpOptions(timeout=int(timeout * 1000)) if hasattr(types, 'HttpOptions') else None
+        return genai.Client(api_key=key, http_options=http_opts)
     return None
 
 
-def get_nim_client() -> Optional[OpenAI]:
+def get_nim_client(timeout: float = PROVIDER_TIMEOUT) -> Optional[OpenAI]:
     """Fallback: NVIDIA NIM — OpenAI-compatible endpoint."""
     key = os.environ.get("NIM_API_KEY")
     if key:
         return OpenAI(
             api_key=key,
             base_url="https://integrate.api.nvidia.com/v1",
-            timeout=60.0,
+            timeout=timeout,
         )
     return None
 
@@ -212,21 +220,28 @@ Format:
 {FEW_SHOT_EXAMPLE}"""
 
 
-# ─── Core Generation ─────────────────────────────────────────────────────────
+# ─── Core Generation & Fallback ──────────────────────────────────────────────
 
-def _call_gemini(user_prompt: str) -> str:
+def _run_with_timeout(func, timeout: float, *args, **kwargs):
+    """Executes a function with a strict timeout limit via ThreadPoolExecutor."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args, **kwargs)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"Operation timed out after {timeout:.1f}s")
+
+
+def _call_gemini_raw(user_prompt: str, timeout: float = PROVIDER_TIMEOUT) -> str:
     """Try Google Gemini via official google.genai SDK (primary)."""
-    g_client = get_gemini_client()
+    g_client = get_gemini_client(timeout=timeout)
     if not g_client:
         raise RuntimeError("GEMINI_API_KEY not configured")
 
     models_to_try = [
+        "gemini-2.5-flash",
         "gemini-flash-latest",
-        "gemini-3.5-flash",
-        "gemini-3.5-flash-lite"
     ]
-
-    from google.genai import types
 
     last_err = None
     for model_name in models_to_try:
@@ -241,17 +256,27 @@ def _call_gemini(user_prompt: str) -> str:
             )
             if response and response.text:
                 return response.text.strip()
+            raise ValueError(f"Gemini model '{model_name}' returned empty text")
         except Exception as e:
             last_err = e
             logger.warning(f"[LLM] Gemini model '{model_name}' failed: {e}")
-            continue
+            break  # Immediately fallback rather than sequentially stalling on failed models
 
-    raise last_err or RuntimeError("All Gemini models failed")
+    raise last_err or RuntimeError("Gemini generation failed")
 
 
-def _call_nim(user_prompt: str) -> str:
-    """Try NVIDIA NIM (fallback)."""
-    nim_client = get_nim_client()
+def _call_gemini_with_timeout(user_prompt: str, timeout: float = PROVIDER_TIMEOUT) -> str:
+    return _run_with_timeout(_call_gemini_raw, timeout, user_prompt, timeout)
+
+
+def _call_gemini(user_prompt: str) -> str:
+    """Convenience wrapper for direct Gemini calls."""
+    return _call_gemini_with_timeout(user_prompt, timeout=PROVIDER_TIMEOUT)
+
+
+def _call_nim_raw(user_prompt: str, timeout: float = PROVIDER_TIMEOUT) -> str:
+    """Try NVIDIA NIM (fallback: meta/llama-3.3-70b-instruct)."""
+    nim_client = get_nim_client(timeout=timeout)
     if not nim_client:
         raise RuntimeError("NIM_API_KEY not configured")
 
@@ -263,8 +288,20 @@ def _call_nim(user_prompt: str) -> str:
         ],
         temperature=0.8,
         max_tokens=512,
+        timeout=timeout,
     )
+    if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
+        raise ValueError("NIM returned an empty or invalid response")
     return response.choices[0].message.content.strip()
+
+
+def _call_nim_with_timeout(user_prompt: str, timeout: float = PROVIDER_TIMEOUT) -> str:
+    return _run_with_timeout(_call_nim_raw, timeout, user_prompt, timeout)
+
+
+def _call_nim(user_prompt: str) -> str:
+    """Convenience wrapper for direct NIM calls."""
+    return _call_nim_with_timeout(user_prompt, timeout=PROVIDER_TIMEOUT)
 
 
 def _is_rate_limit_error(err: Exception) -> bool:
@@ -281,6 +318,9 @@ def generate_reading_text(
     """
     Generate a German reading passage using Krashen's i+1 principle.
     Accepts target_word as a string or word dictionary (uses surface_form if available).
+    Falls back from Gemini to NIM on ANY error/exception immediately.
+    Enforces per-provider timeout (~25s) and overall chain timeout (<=45s).
+    Raises HTTP 503 if both providers fail.
     """
     # Extract best word surface string
     if isinstance(target_word, dict):
@@ -289,26 +329,54 @@ def generate_reading_text(
         target_word_str = str(target_word)
 
     user_prompt = _build_user_prompt(anchor_words, target_word_str, domain, level)
+    start_time = time.time()
 
-    # ── 1. Try Google Gemini ─────────────────────────────────────────────────
-    try:
-        text = _call_gemini(user_prompt)
-        logger.info(f"[LLM] Gemini ✓  domain={domain} level={level} target={target_word_str}")
-        return text
-    except Exception as e:
-        if _is_rate_limit_error(e):
-            logger.warning(f"[LLM] Gemini rate-limit, falling back to NIM: {e}")
-        else:
-            logger.warning(f"[LLM] Gemini error ({type(e).__name__}), falling back to NIM: {e}")
+    # ── 1. Try Google Gemini (Primary) ───────────────────────────────────────
+    gemini_err = None
+    elapsed = time.time() - start_time
+    remaining_chain_time = CHAIN_TIMEOUT - elapsed
+    gemini_timeout = min(PROVIDER_TIMEOUT, remaining_chain_time)
 
-    # ── 2. Fallback: NVIDIA NIM ───────────────────────────────────────────────
-    try:
-        text = _call_nim(user_prompt)
-        logger.info(f"[LLM] NIM fallback ✓  domain={domain} level={level} target={target_word_str}")
-        return text
-    except Exception as e:
-        logger.error(f"[LLM] NIM also failed: {e}")
-        return f"ERROR: Both Gemini and NIM failed. Last error: {e}"
+    if gemini_timeout > 0:
+        try:
+            text = _call_gemini_with_timeout(user_prompt, timeout=gemini_timeout)
+            if text and not text.startswith("ERROR"):
+                logger.info(f"[LLM] Gemini ✓  domain={domain} level={level} target={target_word_str}")
+                return text
+            else:
+                raise ValueError("Gemini returned invalid or empty text")
+        except Exception as e:
+            gemini_err = e
+            logger.warning(f"[LLM] Gemini failed ({type(e).__name__}: {e}), immediately falling back to NIM.")
+    else:
+        logger.warning("[LLM] Chain timeout expired before Gemini could execute.")
+
+    # ── 2. Fallback: NVIDIA NIM (meta/llama-3.3-70b-instruct) ───────────────────
+    nim_err = None
+    elapsed = time.time() - start_time
+    remaining_chain_time = CHAIN_TIMEOUT - elapsed
+    nim_timeout = min(PROVIDER_TIMEOUT, remaining_chain_time)
+
+    if nim_timeout > 0:
+        try:
+            text = _call_nim_with_timeout(user_prompt, timeout=nim_timeout)
+            if text and not text.startswith("ERROR"):
+                logger.info(f"[LLM] NIM fallback ✓  domain={domain} level={level} target={target_word_str}")
+                return text
+            else:
+                raise ValueError("NIM returned invalid or empty text")
+        except Exception as e:
+            nim_err = e
+            logger.error(f"[LLM] NIM fallback failed ({type(e).__name__}: {e}).")
+    else:
+        logger.warning("[LLM] Chain timeout expired before NIM could execute.")
+
+    # ── 3. Both Providers Failed -> HTTP 503 ───────────────────────────────────
+    logger.error(f"[LLM] Both LLM providers failed. Gemini: {gemini_err}, NIM: {nim_err}")
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=OVERLOAD_MESSAGE
+    )
 
 
 # ─── Ratio validator ─────────────────────────────────────────────────────────
@@ -342,16 +410,21 @@ def validate_and_generate(
     for attempt in range(max_retries):
         try:
             text = generate_reading_text(anchor_lemmas, target_lemma, domain=domain, level=level)
+        except HTTPException:
+            # Let HTTP 503 pass through cleanly to API callers
+            raise
         except Exception as e:
-            if _is_rate_limit_error(e):
-                wait = 2 ** attempt
-                logger.warning(f"[LLM] Rate-limit on attempt {attempt+1}, backing off {wait}s")
-                time.sleep(wait)
-                continue
-            return f"ERROR: {e}", False, 1.0
+            logger.error(f"[LLM] Unexpected error during validate_and_generate: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=OVERLOAD_MESSAGE
+            )
 
         if text.startswith("ERROR"):
-            return text, False, 1.0
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=OVERLOAD_MESSAGE
+            )
 
         last_text = text
         ratio = calculate_unknown_ratio(text, all_known_lemmas)
@@ -363,4 +436,7 @@ def validate_and_generate(
     if last_text:
         return last_text, False, last_ratio
 
-    return "ERROR: Text generation failed after retries.", False, 1.0
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=OVERLOAD_MESSAGE
+    )
