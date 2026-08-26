@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Zap, Flame, Award, CheckCircle2 } from 'lucide-react';
 import axios from 'axios';
 import { supabase } from '@/lib/supabaseClient';
+import { API_URL } from '@/lib/api';
 
 interface DailyGoalBarProps {
   userId: string;
@@ -22,7 +23,7 @@ export default function DailyGoalBar({ userId, backendUrl, refreshTrigger }: Dai
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-      const url = `${backendUrl || 'http://localhost:8000/api/reader'}/streak/${userId}`;
+      const url = `${backendUrl || `${API_URL}/api/reader`}/streak/${userId}`;
       const res = await axios.get(url, { headers });
       if (res.data && res.data.daily_goal) {
         setGoal(res.data.daily_goal);

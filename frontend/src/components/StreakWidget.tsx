@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Flame, Check, ShieldCheck, ChevronDown } from 'lucide-react';
 import axios from 'axios';
 import { supabase } from '@/lib/supabaseClient';
+import { API_URL } from '@/lib/api';
 
 interface StreakData {
   current_streak: number;
@@ -32,7 +33,7 @@ export default function StreakWidget({ userId, backendUrl, refreshTrigger }: Str
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-      const url = `${backendUrl || 'http://localhost:8000/api/reader'}/streak/${userId}`;
+      const url = `${backendUrl || `${API_URL}/api/reader`}/streak/${userId}`;
       const res = await axios.get(url, { headers });
       if (res.data) {
         setStreakData(res.data);

@@ -11,8 +11,9 @@ import DailyGoalBar from '../components/DailyGoalBar';
 import { AuthModal } from '../components/AuthModal';
 import { AuthGate } from '../components/AuthGate';
 import { supabase } from '@/lib/supabaseClient';
+import { API_URL } from '@/lib/api';
 
-const BACKEND_URL = 'http://localhost:8000/api/reader';
+const BACKEND_URL = `${API_URL}/api/reader`;
 const FALLBACK_USER_ID = "b99cf3a3-c5fe-473e-8305-7be69a6ba848"; // Fallback test user UUID
 
 interface GeneratedText {

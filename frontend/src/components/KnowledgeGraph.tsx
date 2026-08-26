@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Brain, Share2, Info, X, Zap, RefreshCw } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from '@/lib/api';
 
 interface NodeData {
   id: number;
@@ -40,7 +41,7 @@ export default function KnowledgeGraph({ userId, backendUrl }: KnowledgeGraphPro
   const fetchGraphData = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`http://localhost:8000/api/reader/graph/${userId}`);
+      const res = await axios.get(`${API_URL}/api/reader/graph/${userId}`);
       const rawNodes: NodeData[] = res.data.nodes || [];
       const rawEdges: EdgeData[] = res.data.edges || [];
 

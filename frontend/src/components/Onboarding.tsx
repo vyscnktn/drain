@@ -5,6 +5,7 @@ import { Star, ChevronRight, CheckCircle, Sparkles, RefreshCw, Globe, Mail, Lock
 import axios from 'axios';
 import styles from '../app/page.module.css';
 import { supabase } from '@/lib/supabaseClient';
+import { API_URL } from '@/lib/api';
 
 type Language = 'EN' | 'ES' | 'TR' | 'DE';
 
@@ -151,7 +152,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
 
     setLoading(true);
     try {
-      const response = await axios.post(`http://localhost:8000/api/onboarding/start`, {
+      const response = await axios.post(`${API_URL}/api/onboarding/start`, {
         user_id: userId,
         current_level: currentLevel,
         target_level: targetLevel,
@@ -228,7 +229,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
         }
 
         // 3. Submit Calibration Ratings to Backend
-        const res = await axios.post(`http://localhost:8000/api/onboarding/submit`, {
+        const res = await axios.post(`${API_URL}/api/onboarding/submit`, {
           user_id: newUserId,
           current_level: currentLevel,
           target_level: targetLevel,
