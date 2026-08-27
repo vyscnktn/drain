@@ -24,7 +24,8 @@ gemini_key = os.environ.get("GEMINI_API_KEY")
 
 PROVIDER_TIMEOUT: float = 25.0
 CHAIN_TIMEOUT: float = 45.0
-OVERLOAD_MESSAGE: str = "Der Dienst ist gerade überlastet. Bitte versuche es gleich erneut."
+GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+OVERLOAD_MESSAGE: str = "Der Dienst ist gerade überlastet, bitte erneut versuchen."
 
 
 # ─── Client factories ────────────────────────────────────────────────────────
@@ -233,36 +234,28 @@ def _run_with_timeout(func, timeout: float, *args, **kwargs):
 
 
 def _call_gemini_raw(user_prompt: str, timeout: float = PROVIDER_TIMEOUT) -> str:
-    """Try Google Gemini via official google.genai SDK (primary)."""
+    """Try Google Gemini via official google.genai SDK (primary: gemini-3.5-flash or GEMINI_MODEL env)."""
     g_client = get_gemini_client(timeout=timeout)
     if not g_client:
         raise RuntimeError("GEMINI_API_KEY not configured")
 
-    models_to_try = [
-        "gemini-2.5-flash",
-        "gemini-flash-latest",
-    ]
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
-    last_err = None
-    for model_name in models_to_try:
-        try:
-            response = g_client.models.generate_content(
-                model=model_name,
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    temperature=0.8,
-                )
+    try:
+        response = g_client.models.generate_content(
+            model=model_name,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                temperature=0.8,
             )
-            if response and response.text:
-                return response.text.strip()
-            raise ValueError(f"Gemini model '{model_name}' returned empty text")
-        except Exception as e:
-            last_err = e
-            logger.warning(f"[LLM] Gemini model '{model_name}' failed: {e}")
-            break  # Immediately fallback rather than sequentially stalling on failed models
-
-    raise last_err or RuntimeError("Gemini generation failed")
+        )
+        if response and response.text:
+            return response.text.strip()
+        raise ValueError(f"Gemini model '{model_name}' returned empty text")
+    except Exception as e:
+        logger.warning(f"[LLM] Gemini model '{model_name}' failed: {e}")
+        raise
 
 
 def _call_gemini_with_timeout(user_prompt: str, timeout: float = PROVIDER_TIMEOUT) -> str:

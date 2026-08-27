@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
+import time
 import logging
 
 from app.services.krashen_engine import select_reading_words
@@ -70,6 +71,8 @@ async def start_onboarding(request: Request, payload: OnboardingStartRequest):
         all_known_lemmas = [c['lemma'] for c in core_resp.data] if core_resp.data else []
 
         for idx, lvl in enumerate(levels):
+            if idx > 0:
+                time.sleep(1.0)  # Brief pause between sequential LLM calls to prevent rate limiting
             anchors, targets = select_reading_words(
                 payload.user_id,
                 domain=domain_tag,

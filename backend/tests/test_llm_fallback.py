@@ -69,7 +69,8 @@ class TestLLMFallbackChain(unittest.TestCase):
         
         duration = time.time() - start
         self.assertEqual(ctx.exception.status_code, 503)
-        self.assertEqual(ctx.exception.detail, "Der Dienst ist gerade überlastet. Bitte versuche es gleich erneut.")
+        self.assertEqual(ctx.exception.detail, OVERLOAD_MESSAGE)
+        self.assertEqual(ctx.exception.detail, "Der Dienst ist gerade überlastet, bitte erneut versuchen.")
         self.assertLess(duration, 45.0)
 
     @patch("app.services.llm_engine._call_nim_with_timeout")
@@ -87,7 +88,7 @@ class TestLLMFallbackChain(unittest.TestCase):
         
         self.assertEqual(ctx.exception.status_code, 503)
         self.assertEqual(ctx.exception.detail, OVERLOAD_MESSAGE)
-        self.assertEqual(ctx.exception.detail, "Der Dienst ist gerade überlastet. Bitte versuche es gleich erneut.")
+        self.assertEqual(ctx.exception.detail, "Der Dienst ist gerade überlastet, bitte erneut versuchen.")
         self.assertLess(duration, CHAIN_TIMEOUT)
 
     @patch("app.services.llm_engine._call_nim_with_timeout")
