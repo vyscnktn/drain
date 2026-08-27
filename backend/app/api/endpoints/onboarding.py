@@ -35,7 +35,7 @@ class OnboardingSubmitRequest(BaseModel):
 
 LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1"]
 
-# In-memory storage for fast calibration text staging across steps
+# In-memory session store for progressive calibration text pipeline
 _CALIBRATION_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
@@ -117,7 +117,7 @@ def _generate_single_calibration_text(
             _CALIBRATION_CACHE[user_id]["texts"] = {}
 
         _CALIBRATION_CACHE[user_id]["texts"][step] = text_item
-        logger.info(f"[Onboarding] Pre-generated step {step} for user {user_id} (Level: {level}) ✓")
+        logger.info(f"[Onboarding] Generated step {step} for user {user_id} (Level: {level}) ✓")
         return text_item
 
     except Exception as e:
@@ -135,10 +135,11 @@ def _generate_single_calibration_text(
 
 @router.post("/start")
 @limiter.limit("15/minute")
-async def start_onboarding(request: Request, payload: OnboardingStartRequest, background_tasks: BackgroundTasks):
+async def start_onboarding(request: Request, payload: OnboardingStartRequest):
     """
-    Produces ONLY the first calibration text (Step 1) immediately and schedules
-    the generation of the subsequent text (Step 2) in the background.
+    Rolling/Pipeline Model:
+    Generates ONLY the 1st calibration text and returns immediately.
+    Subsequent texts are NOT generated until the user rates Text 1 (cost saving).
     """
     try:
         domain_tag = payload.domain
@@ -154,29 +155,16 @@ async def start_onboarding(request: Request, payload: OnboardingStartRequest, ba
                 "target_level": payload.target_level,
                 "levels": levels
             },
-            "texts": {
-                2: {"status": "pending"},
-                3: {"status": "pending"}
-            }
+            "texts": {}
         }
 
-        # 1. Generate ONLY the first text synchronously
+        # Generate ONLY the first text (Step 1)
         text_1 = _generate_single_calibration_text(
             user_id=payload.user_id,
             domain_tag=domain_tag,
             subdomain=payload.subdomain,
             level=levels[0],
             step=1
-        )
-
-        # 2. Schedule Text 2 generation in background
-        background_tasks.add_task(
-            _generate_single_calibration_text,
-            payload.user_id,
-            domain_tag,
-            payload.subdomain,
-            levels[1],
-            2
         )
 
         return {
@@ -230,10 +218,11 @@ async def get_calibration_text(user_id: str, step: int):
 @limiter.limit("30/minute")
 async def submit_onboarding(request: Request, payload: OnboardingSubmitRequest, background_tasks: BackgroundTasks):
     """
-    Handles step ratings:
-    - Step 1 rating: Queues Text 3 generation in background and returns Text 2 if ready.
-    - Step 2 rating: Returns Text 3 if ready.
-    - Step 3 rating: Completes user profile registration & calculates baseline mastery.
+    Rolling/Pipeline Model:
+    - Step 1 rating: Launches BackgroundTask to generate Text 2 in background and returns status.
+    - Step 2 rating: Launches BackgroundTask to generate Text 3 in background and returns status.
+    - Step 3 (Final) rating: Completes user profile registration & calculates baseline mastery.
+    If the user drops off, remaining texts are never generated (cost savings).
     """
     try:
         num_ratings = len(payload.ratings)
@@ -249,20 +238,37 @@ async def submit_onboarding(request: Request, payload: OnboardingSubmitRequest, 
         # ── Intermediate Rating (Step 1 or 2 submitted) ───────────────────────
         if num_ratings < 3:
             next_step = num_ratings + 1
+            next_level = levels[next_step - 1]
 
-            # If transitioning to step 2, trigger background generation of step 3
-            if next_step == 2:
+            # Ensure session entry exists in cache
+            if payload.user_id not in _CALIBRATION_CACHE:
+                _CALIBRATION_CACHE[payload.user_id] = {
+                    "session": {
+                        "domain": domain_tag,
+                        "subdomain": subdomain,
+                        "current_level": payload.current_level,
+                        "target_level": payload.target_level,
+                        "levels": levels
+                    },
+                    "texts": {}
+                }
+
+            cached_text = _CALIBRATION_CACHE[payload.user_id].get("texts", {}).get(next_step)
+            
+            # If not yet generated or pending, queue generation via BackgroundTasks
+            if not cached_text:
+                _CALIBRATION_CACHE[payload.user_id]["texts"][next_step] = {"status": "pending"}
                 background_tasks.add_task(
                     _generate_single_calibration_text,
                     payload.user_id,
                     domain_tag,
                     subdomain,
-                    levels[2],
-                    3
+                    next_level,
+                    next_step
                 )
 
-            # Check if next step text is ready
-            cached_text = session_data.get("texts", {}).get(next_step)
+            # Check if already ready (e.g. if generated or fast)
+            cached_text = _CALIBRATION_CACHE[payload.user_id].get("texts", {}).get(next_step)
             if cached_text and cached_text.get("status") == "ready":
                 return {
                     "status": "next",
@@ -276,7 +282,7 @@ async def submit_onboarding(request: Request, payload: OnboardingSubmitRequest, 
                         payload.user_id,
                         domain_tag,
                         subdomain,
-                        levels[next_step - 1],
+                        next_level,
                         next_step
                     )
                     return {
@@ -357,7 +363,7 @@ async def submit_onboarding(request: Request, payload: OnboardingSubmitRequest, 
             except Exception as e:
                 logger.warning(f"[Onboarding] Skipping word_state upsert for user {payload.user_id}: {e}")
 
-        # Clean up cache
+        # Clean up session cache on completion
         _CALIBRATION_CACHE.pop(payload.user_id, None)
 
         return {

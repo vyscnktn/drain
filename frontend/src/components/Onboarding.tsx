@@ -221,8 +221,8 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
 
         // Lightweight polling if next text is still generating in the background
         let attempts = 0;
-        const maxAttempts = 30; // ~30 seconds max
-        const pollInterval = 1000; // 1s interval
+        const maxAttempts = 20; // up to ~50s polling
+        const pollInterval = 2500; // 2.5s interval (2-3s)
 
         while (attempts < maxAttempts) {
           await new Promise(r => setTimeout(r, pollInterval));
