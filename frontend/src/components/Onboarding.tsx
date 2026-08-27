@@ -44,7 +44,8 @@ const UI_STRINGS: Record<Language, Record<string, string>> = {
     doneTitle: 'Account Created & Calibrated!',
     doneSub: 'Your vocabulary profile has been initialized for',
     doneMastery: 'Initial mastery score:',
-    startJourneyBtn: 'Start Reading Journey'
+    startJourneyBtn: 'Start Reading Journey',
+    preparingText: 'Text wird vorbereitet...'
   },
   ES: {
     welcome: 'Crear Cuenta y Calibrar Nivel',
@@ -64,7 +65,8 @@ const UI_STRINGS: Record<Language, Record<string, string>> = {
     doneTitle: '¡Cuenta Creada y Calibrada!',
     doneSub: 'Tu perfil de vocabulario se ha inicializado para',
     doneMastery: 'Puntuación inicial:',
-    startJourneyBtn: 'Comenzar Viaje de Lectura'
+    startJourneyBtn: 'Comenzar Viaje de Lectura',
+    preparingText: 'Text wird vorbereitet...'
   },
   TR: {
     welcome: 'Hesap Oluştur ve Seviyeni Ölç',
@@ -84,7 +86,8 @@ const UI_STRINGS: Record<Language, Record<string, string>> = {
     doneTitle: 'Kayıt ve Kalibrasyon Tamamlandı!',
     doneSub: 'Kelime profiliniz başarıyla ayarlandı:',
     doneMastery: 'Başlangıç hakimiyet seviyesi:',
-    startJourneyBtn: 'Okuma Yolculuğunu Başlat'
+    startJourneyBtn: 'Okuma Yolculuğunu Başlat',
+    preparingText: 'Text wird vorbereitet...'
   },
   DE: {
     welcome: 'Konto erstellen & Niveau kalibrieren',
@@ -104,7 +107,8 @@ const UI_STRINGS: Record<Language, Record<string, string>> = {
     doneTitle: 'Konto erstellt & Kalibriert!',
     doneSub: 'Dein Wortschatz-Profil wurde initialisiert für',
     doneMastery: 'Start-Bekanntheitsgrad:',
-    startJourneyBtn: 'Lese-Reise starten'
+    startJourneyBtn: 'Lese-Reise starten',
+    preparingText: 'Text wird vorbereitet...'
   }
 };
 
@@ -127,6 +131,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
 
   const [calibrationTexts, setCalibrationTexts] = useState<CalibrationText[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [isPreparingText, setIsPreparingText] = useState<boolean>(false);
   
   const [currentRating, setCurrentRating] = useState<number>(0);
   const [currentDifficulty, setCurrentDifficulty] = useState<string | null>(null);
@@ -185,9 +190,68 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
     setCurrentRating(0);
     setCurrentDifficulty(null);
     
-    if (currentIndex + 1 < calibrationTexts.length) {
-      setCurrentIndex(currentIndex + 1);
+    // Intermediate Step (Moving from Text 1 to 2, or Text 2 to 3)
+    if (currentIndex + 1 < 3) {
+      const nextStepNum = currentIndex + 2;
+
+      // If next text is already cached locally
+      if (calibrationTexts.length > currentIndex + 1) {
+        setCurrentIndex(currentIndex + 1);
+        return;
+      }
+
+      setIsPreparingText(true);
+      setErrorMsg(null);
+
+      try {
+        const submitRes = await axios.post(`${API_URL}/api/onboarding/submit`, {
+          user_id: userId,
+          current_level: currentLevel,
+          target_level: targetLevel,
+          domain: profession,
+          ratings: updatedRatings
+        });
+
+        if (submitRes.data?.ready && submitRes.data?.text) {
+          setCalibrationTexts(prev => [...prev, submitRes.data.text]);
+          setCurrentIndex(currentIndex + 1);
+          setIsPreparingText(false);
+          return;
+        }
+
+        // Lightweight polling if next text is still generating in the background
+        let attempts = 0;
+        const maxAttempts = 30; // ~30 seconds max
+        const pollInterval = 1000; // 1s interval
+
+        while (attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, pollInterval));
+          attempts++;
+          try {
+            const pollRes = await axios.get(`${API_URL}/api/onboarding/text/${userId}/${nextStepNum}`);
+            if (pollRes.data?.ready && pollRes.data?.text) {
+              setCalibrationTexts(prev => [...prev, pollRes.data.text]);
+              setCurrentIndex(currentIndex + 1);
+              setIsPreparingText(false);
+              return;
+            }
+          } catch (pollErr) {
+            console.warn("[Onboarding] Poll check notice:", pollErr);
+          }
+        }
+
+        setErrorMsg("Der nächste Text konnte nicht rechtzeitig geladen werden. Bitte versuchen Sie es erneut.");
+        setIsPreparingText(false);
+
+      } catch (err: any) {
+        console.error("Step submit / fetch failed", err);
+        const detailMsg = err?.response?.data?.detail;
+        setErrorMsg(detailMsg || "Fehler bei der Textvorbereitung.");
+        setIsPreparingText(false);
+      }
+
     } else {
+      // Final Step: Complete account creation & register profile
       setLoading(true);
       setErrorMsg(null);
       try {
@@ -228,7 +292,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
           }
         }
 
-        // 3. Submit Calibration Ratings to Backend
+        // 3. Submit Final Calibration Ratings to Backend
         const res = await axios.post(`${API_URL}/api/onboarding/submit`, {
           user_id: newUserId,
           current_level: currentLevel,
@@ -513,87 +577,118 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1A6E6E', background: '#e6f4f4', padding: '4px 12px', borderRadius: '9999px' }}>
-              {t.stepHeader} {currentIndex + 1} {t.of} {calibrationTexts[currentIndex].level})
+              {t.stepHeader} {isPreparingText ? currentIndex + 2 : currentIndex + 1} {t.of} {isPreparingText ? '...' : (calibrationTexts[currentIndex]?.level || '...')}
             </span>
             <div style={{ display: 'flex', gap: '6px' }}>
-              {[0, 1, 2].map((idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    width: '32px',
-                    height: '6px',
-                    borderRadius: '9999px',
-                    background: idx === currentIndex ? '#1A6E6E' : idx < currentIndex ? '#10b981' : '#e2e8f0'
-                  }}
-                />
-              ))}
+              {[0, 1, 2].map((idx) => {
+                const activeIdx = isPreparingText ? currentIndex + 1 : currentIndex;
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      width: '32px',
+                      height: '6px',
+                      borderRadius: '9999px',
+                      background: idx === activeIdx ? '#1A6E6E' : idx < activeIdx ? '#10b981' : '#e2e8f0'
+                    }}
+                  />
+                );
+              })}
             </div>
           </div>
 
-          {renderTextDisplay(calibrationTexts[currentIndex])}
-
-          <div style={{ marginTop: '2rem', borderTop: '1px solid #f1f5f9', paddingTop: '1.5rem' }}>
-            <p style={{ fontSize: '0.9rem', fontWeight: 600, color: '#475569', marginBottom: '0.75rem' }}>
-              {t.feedbackQ}
-            </p>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    onClick={() => setCurrentRating(star)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: currentRating >= star ? '#f59e0b' : '#cbd5e1' }}
-                  >
-                    <Star size={26} fill={currentRating >= star ? 'currentColor' : 'none'} />
-                  </button>
-                ))}
+          {isPreparingText ? (
+            <div style={{
+              minHeight: '260px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '1.25rem',
+              padding: '3rem 1.5rem',
+              background: '#f8fafc',
+              borderRadius: '16px',
+              border: '1px dashed #cbd5e1',
+              textAlign: 'center'
+            }}>
+              <RefreshCw className="animate-spin" size={36} color="#1A6E6E" />
+              <div>
+                <p style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1e293b', margin: 0 }}>
+                  {t.preparingText || 'Text wird vorbereitet...'}
+                </p>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.4rem', margin: 0 }}>
+                  Krashen i+1 Algorithmus bereitet den nächsten didaktischen Text vor.
+                </p>
               </div>
+            </div>
+          ) : (
+            <>
+              {calibrationTexts[currentIndex] && renderTextDisplay(calibrationTexts[currentIndex])}
 
-              {currentRating > 0 && (
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  {[
-                    { key: 'Zu einfach', label: t.tooEasy },
-                    { key: 'Genau richtig', label: t.justRight },
-                    { key: 'Zu schwer', label: t.tooHard }
-                  ].map((diff) => (
-                    <button
-                      key={diff.key}
-                      type="button"
-                      onClick={() => setCurrentDifficulty(diff.key)}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '0.8rem',
-                        fontWeight: 500,
-                        borderRadius: '6px',
-                        border: '1px solid #cbd5e1',
-                        background: currentDifficulty === diff.key ? '#1A6E6E' : '#fff',
-                        color: currentDifficulty === diff.key ? '#fff' : '#334155',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {diff.label}
-                    </button>
-                  ))}
+              <div style={{ marginTop: '2rem', borderTop: '1px solid #f1f5f9', paddingTop: '1.5rem' }}>
+                <p style={{ fontSize: '0.9rem', fontWeight: 600, color: '#475569', marginBottom: '0.75rem' }}>
+                  {t.feedbackQ}
+                </p>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => setCurrentRating(star)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: currentRating >= star ? '#f59e0b' : '#cbd5e1' }}
+                      >
+                        <Star size={26} fill={currentRating >= star ? 'currentColor' : 'none'} />
+                      </button>
+                    ))}
+                  </div>
+
+                  {currentRating > 0 && (
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      {[
+                        { key: 'Zu einfach', label: t.tooEasy },
+                        { key: 'Genau richtig', label: t.justRight },
+                        { key: 'Zu schwer', label: t.tooHard }
+                      ].map((diff) => (
+                        <button
+                          key={diff.key}
+                          type="button"
+                          onClick={() => setCurrentDifficulty(diff.key)}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '0.8rem',
+                            fontWeight: 500,
+                            borderRadius: '6px',
+                            border: '1px solid #cbd5e1',
+                            background: currentDifficulty === diff.key ? '#1A6E6E' : '#fff',
+                            color: currentDifficulty === diff.key ? '#fff' : '#334155',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {diff.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
-              <button
-                onClick={handleNextText}
-                disabled={loading || currentRating === 0 || !currentDifficulty}
-                className="btn btn-primary"
-                style={{ padding: '10px 24px', background: '#1A6E6E' }}
-              >
-                {loading ? (
-                  <RefreshCw className="animate-spin" size={18} />
-                ) : (
-                  <>{currentIndex === 2 ? t.finishBtn : t.nextBtn} <ChevronRight size={18} /></>
-                )}
-              </button>
-            </div>
-          </div>
+                <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
+                  <button
+                    onClick={handleNextText}
+                    disabled={loading || currentRating === 0 || !currentDifficulty}
+                    className="btn btn-primary"
+                    style={{ padding: '10px 24px', background: '#1A6E6E' }}
+                  >
+                    {loading ? (
+                      <RefreshCw className="animate-spin" size={18} />
+                    ) : (
+                      <>{currentIndex === 2 ? t.finishBtn : t.nextBtn} <ChevronRight size={18} /></>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
