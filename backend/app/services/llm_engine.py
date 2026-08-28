@@ -34,7 +34,7 @@ def get_gemini_client(timeout: float = PROVIDER_TIMEOUT) -> Optional[genai.Clien
     """Primary: Google Gemini via official google.genai SDK."""
     key = os.environ.get("GEMINI_API_KEY")
     if key:
-        http_opts = types.HttpOptions(timeout=int(timeout * 1000)) if hasattr(types, 'HttpOptions') else None
+        http_opts = types.HttpOptions(timeout=timeout) if hasattr(types, 'HttpOptions') else None
         return genai.Client(api_key=key, http_options=http_opts)
     return None
 
@@ -62,40 +62,78 @@ SCENARIOS: Dict[str, List[str]] = {
         "eine E-Mail an einen Kollegen über ein Bugfix",
         "ein Problem kurz vor dem Release",
         "ein Code-Review zwischen zwei Entwicklern",
-        "ein Vorfall beim Serverausfall"
+        "ein Vorfall beim Serverausfall",
+        "die Planung des nächsten Sprints im Scrum-Team",
+        "ein Gespräch mit dem Product Owner über neue Anforderungen",
+        "eine Fehlersuche im Datenbankprotokoll",
+        "die Einführung eines neuen Sicherheitsprotokolls",
+        "eine technische Dokumentation für eine API-Schnittstelle"
     ],
     "HEALTH": [
         "ein Patientengespräch im Behandlungszimmer",
         "die Übergabe zwischen zwei Schichten",
         "ein Beratungsgespräch mit der Ärztin",
-        "eine Dokumentation der Pflegemaßnahme"
+        "eine Dokumentation der Pflegemaßnahme",
+        "die Aufnahme eines neuen Patienten in der Notaufnahme",
+        "ein Gespräch mit Angehörigen über den Behandlungsverlauf",
+        "eine Teambesprechung im interdisziplinären Krankenhausteam",
+        "die Vorbereitung einer diagnostischen Untersuchung"
     ],
     "MEDIZIN": [
         "ein Anamnesegespräch auf der Station",
         "eine Klinikvisite mit dem Chefarzt",
         "ein Befundgespräch mit einem Patienten",
-        "eine Besprechung im OP-Saal"
+        "eine Besprechung im OP-Saal",
+        "die Auswertung eines Röntgenbildes oder Laborbefunds",
+        "ein Konsilgespräch zwischen Fachärzten",
+        "die Aufklärung des Patienten vor einem operativen Eingriff",
+        "die Verordnung eines Therapie- und Medikationsplans",
+        "die strukturierte Patientenübergabe im Schockraum",
+        "ein Entlassungsgespräch mit Empfehlungen für den Hausarzt"
     ],
     "PFLEGE": [
         "eine Schichtübergabe im Seniorenheim",
-        "die Wundversorgung bei einem Patienten",
-        "ein Gespräch über den Pflegeplan mit der Pflegekraft",
-        "die Vitalzeichenkontrolle am Morgen"
+        "die Wundversorgung und der Verbandswechsel bei einem Patienten",
+        "ein Gespräch über den Pflegeplan mit der Pflegedienstleitung",
+        "die Vitalzeichenkontrolle und Medikamentenausgabe am Morgen",
+        "die Begleitung eines Patienten bei der Frühmobilisation",
+        "ein einfühlsames Gespräch mit einer besorgten Angehörigen",
+        "die Pflegedokumentation im digitalen Krankenhaussystem",
+        "das Erkennen und Melden von Notfallsymptomen auf der Station",
+        "die Vorbereitung eines Pflegebedürftigen auf die Entlassung",
+        "die hygienische Versorgung und Sturzprophylaxe im Pflegealltag"
     ],
     "PHYSIO": [
         "eine Therapiesitzung im Behandlungsraum",
         "eine Übungseinheit zur Mobilisation nach einer Verletzung",
-        "ein Beratungsgespräch nach einer Knie-OP"
+        "ein Beratungsgespräch nach einer Knie- oder Hüft-OP",
+        "die Erstellung eines individuellen Trainings- und Heimübungsprogramms",
+        "eine Ganganalyse und Haltungskorrektur beim Patienten",
+        "die manuelle Therapie bei chronischen Rückenschmerzen",
+        "eine Rücksprache mit dem behandelnden Orthopäden",
+        "die Motivation eines Patienten während der Rehabilitation",
+        "eine ergotherapeutische Beratung für den Arbeitsplatz"
     ],
     "PHARMA": [
         "ein Beratungsgespräch am Kundenschalter der Apotheke",
-        "eine Überprüfung des Rezepts vor der Ausgabe",
-        "die Aufklärung über Nebenwirkungen eines Medikaments"
+        "eine Überprüfung des Rezepts vor der Arzneimittelausgabe",
+        "die Aufklärung über Wechselwirkungen und Nebenwirkungen eines Medikaments",
+        "die Beratung zur korrekten Dosierung und Einnahmezeit von Antibiotika",
+        "ein Telefonat mit der Arztpraxis wegen einer Rezeptunklarheit",
+        "die Herstellung einer individuellen Rezeptur (Salbe oder Lösung) im Labor",
+        "die Einlagerung und Temperaturüberwachung kühlpflichtiger Arzneimittel",
+        "die Beratung einer Kundin zu rezeptfreien Schmerzmitteln",
+        "das Bestellen von Notfallmedikamenten beim pharmazeutischen Großhandel"
     ],
     "ACADEMIC": [
         "eine Diskussion im Universitätsseminar",
         "eine E-Mail an den Professor wegen der Hausarbeit",
-        "ein kurzer Vortrag vor der Forschungsgruppe"
+        "ein kurzer Vortrag vor der Forschungsgruppe",
+        "ein Kolloquium über methodische Ansätze einer wissenschaftlichen Studie",
+        "ein Feedbackgespräch zur Bachelor- oder Masterarbeit",
+        "die Auswertung und Diskussion von empirischen Forschungsergebnissen",
+        "die Vorbereitung auf eine mündliche Fachprüfung oder Klausur",
+        "eine Recherche und Diskussion in der Universitätsbibliothek"
     ],
 }
 
@@ -268,20 +306,19 @@ def _call_gemini(user_prompt: str) -> str:
 
 
 def _call_nim_raw(user_prompt: str, timeout: float = PROVIDER_TIMEOUT) -> str:
-    """Try NVIDIA NIM (fallback: meta/llama-3.3-70b-instruct)."""
+    """Try NVIDIA NIM (fallback: meta/llama-4-maverick)."""
     nim_client = get_nim_client(timeout=timeout)
     if not nim_client:
         raise RuntimeError("NIM_API_KEY not configured")
 
     response = nim_client.chat.completions.create(
-        model="meta/llama-3.3-70b-instruct",
+        model="meta/llama-4-maverick",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ],
         temperature=0.8,
         max_tokens=512,
-        timeout=timeout,
     )
     if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
         raise ValueError("NIM returned an empty or invalid response")
@@ -344,7 +381,7 @@ def generate_reading_text(
     else:
         logger.warning("[LLM] Chain timeout expired before Gemini could execute.")
 
-    # ── 2. Fallback: NVIDIA NIM (meta/llama-3.3-70b-instruct) ───────────────────
+    # ── 2. Fallback: NVIDIA NIM (meta/llama-4-maverick) ───────────────────
     nim_err = None
     elapsed = time.time() - start_time
     remaining_chain_time = CHAIN_TIMEOUT - elapsed

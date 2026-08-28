@@ -63,8 +63,8 @@ async def generate_reading(
             known_words_resp = supabase_admin.table('words').select('lemma').in_('id', known_ids).execute()
             all_known_lemmas.extend([w['lemma'] for w in known_words_resp.data])
             
-        domain_tag = payload.target_domain
-        text, passed, ratio = validate_and_generate(anchor_lemmas, target_lemma, all_known_lemmas, domain=domain_tag, level=payload.target_level)
+        effective_domain = payload.subdomain or payload.target_domain
+        text, passed, ratio = validate_and_generate(anchor_lemmas, target_lemma, all_known_lemmas, domain=effective_domain, level=payload.target_level)
         
         if not passed and not text.startswith("ERROR"):
             logger.warning(f"Validation failed (ratio {ratio}). Text: {text}")

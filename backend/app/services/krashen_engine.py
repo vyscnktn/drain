@@ -115,7 +115,13 @@ def select_reading_words(user_id: str, domain: str = "HEALTH", subdomain: str = 
         except Exception:
             core_resp = supabase_admin.table('words').select('*').eq('is_core', True).limit(50).execute()
         
-        all_core_words = [w for w in core_resp.data if is_valid_target_word(w)]
+        all_core_words = [w for w in core_resp.data if is_valid_target_word(w)] if core_resp.data else []
+        if not all_core_words:
+            try:
+                core_resp = supabase_admin.table('words').select('*').eq('is_core', True).limit(50).execute()
+                all_core_words = [w for w in core_resp.data if is_valid_target_word(w)] if core_resp.data else []
+            except Exception:
+                all_core_words = []
             
         anchors = random.sample(all_core_words, min(10, len(all_core_words))) if all_core_words else []
         anchor_ids = [a['id'] for a in anchors]

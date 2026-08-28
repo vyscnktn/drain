@@ -21,7 +21,7 @@ interface CalibrationText {
 interface OnboardingProps {
   userId: string;
   backendUrl: string;
-  onComplete: (user: any, calibratedMastery: number, level: string, profession: string) => void;
+  onComplete: (user: any, calibratedMastery: number, level: string, profession: string, subdomain?: string | null) => void;
   onCancel?: () => void;
 }
 
@@ -125,6 +125,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
   const [currentLevel, setCurrentLevel] = useState<string>('A2');
   const [targetLevel, setTargetLevel] = useState<string>('B2');
   const [profession, setProfession] = useState<string>('HEALTH');
+  const [subdomain, setSubdomain] = useState<string | null>(null);
   
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -146,12 +147,17 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
     setErrorMsg(null);
 
     if (!fullName.trim() || !email.trim() || !password) {
-      setErrorMsg("Lütfen tüm alanları doldurun.");
+      setErrorMsg("Bitte füllen Sie alle Felder aus.");
       return;
     }
 
     if (password.length < 6) {
-      setErrorMsg("Şifre en az 6 karakter olmalıdır.");
+      setErrorMsg("Das Passwort muss mindestens 6 Zeichen lang sein.");
+      return;
+    }
+
+    if (profession === 'HEALTH' && !subdomain) {
+      setErrorMsg("Bitte wählen Sie Ihren Fachbereich im Gesundheitswesen.");
       return;
     }
 
@@ -161,7 +167,8 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
         user_id: userId,
         current_level: currentLevel,
         target_level: targetLevel,
-        domain: profession,   // sends strictly 'IT', 'HEALTH', or 'ACADEMIC'
+        domain: profession,
+        subdomain: profession === 'HEALTH' ? subdomain : undefined,
       });
       setCalibrationTexts(response.data.calibration_texts || []);
       setCurrentIndex(0);
@@ -169,7 +176,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
     } catch (err: any) {
       console.error("Calibration start failed", err);
       const serverMsg = err?.response?.data?.detail;
-      setErrorMsg(serverMsg || "Kalibrasyon metinleri oluşturulamadı. Lütfen tekrar deneyin.");
+      setErrorMsg(serverMsg || "Kalibrierungstexte konnten nicht erstellt werden. Bitte versuchen Sie es erneut.");
     }
     setLoading(false);
   };
@@ -263,6 +270,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
             data: {
               full_name: fullName,
               profession: profession,
+              subdomain: profession === 'HEALTH' ? subdomain : undefined,
               target_level: targetLevel
             }
           }
@@ -284,6 +292,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
               email: email,
               target_domain: profession,
               domain: profession,
+              subdomain: profession === 'HEALTH' ? subdomain : null,
               target_level: targetLevel,
               current_level: currentLevel,
             });
@@ -308,7 +317,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
         setStep('done');
       } catch (err: any) {
         console.error("Failed to complete registration and onboarding", err);
-        setErrorMsg(err.message || "Hesap oluşturma veya kalibrasyon kaydedilemedi.");
+        setErrorMsg(err.message || "Konto konnte nicht erstellt oder Kalibrierung nicht gespeichert werden.");
       }
       setLoading(false);
     }
@@ -456,7 +465,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
           </div>
 
           {/* Berufsfeld / Profession Selector */}
-          <div style={{ marginBottom: '1.5rem' }}>
+          <div style={{ marginBottom: profession === 'HEALTH' ? '0.75rem' : '1.5rem' }}>
             <label style={{ display: 'block', fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.85rem', color: '#334155' }}>
               {t.professionLabel}
             </label>
@@ -469,7 +478,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
                 <button
                   key={prof.id}
                   type="button"
-                  onClick={() => setProfession(prof.id)}
+                  onClick={() => { setProfession(prof.id); if (prof.id !== 'HEALTH') setSubdomain(null); }}
                   style={{
                     padding: '11px 12px',
                     fontSize: '0.82rem',
@@ -487,6 +496,46 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
               ))}
             </div>
           </div>
+
+          {/* HEALTH Subdomain Selector — conditional */}
+          {profession === 'HEALTH' && (
+            <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+              <label style={{ display: 'block', fontWeight: 600, marginBottom: '0.6rem', fontSize: '0.82rem', color: '#166534' }}>
+                Fachbereich wählen:
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>
+                {[
+                  { id: 'MEDIZIN', label: '👨‍⚕️ Arzt / Ärztin', desc: 'Klinik, Praxis, Station' },
+                  { id: 'PFLEGE', label: '🩺 Pflege', desc: 'Kranken- & Altenpflege' },
+                  { id: 'PHYSIO', label: '🏋️ Physiotherapie', desc: 'Therapie & Reha' },
+                  { id: 'PHARMA', label: '💊 Pharmazie', desc: 'Apotheke & Beratung' },
+                ].map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setSubdomain(sub.id)}
+                    style={{
+                      padding: '10px 12px',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      borderRadius: '10px',
+                      border: subdomain === sub.id ? '2px solid #166534' : '1px solid #d1d5db',
+                      background: subdomain === sub.id ? '#dcfce7' : '#fff',
+                      color: subdomain === sub.id ? '#166534' : '#374151',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <div>{sub.label}</div>
+                    <div style={{ fontSize: '0.7rem', fontWeight: 400, color: subdomain === sub.id ? '#15803d' : '#9ca3af', marginTop: '2px' }}>
+                      {sub.desc}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Current Level Selector */}
           <div style={{ marginBottom: '1.25rem' }}>
@@ -727,7 +776,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
           </div>
 
           <button
-            onClick={() => onComplete(registeredUser, resultMastery, targetLevel, profession)}
+            onClick={() => onComplete(registeredUser, resultMastery, targetLevel, profession, subdomain)}
             className="btn btn-primary"
             style={{ padding: '14px 32px', fontSize: '1.05rem', background: '#1A6E6E', borderRadius: '12px' }}
           >

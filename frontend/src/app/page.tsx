@@ -34,6 +34,7 @@ export default function Home() {
   const [showGraph, setShowGraph] = useState<boolean>(false);
   const [currentLevel, setCurrentLevel] = useState<string>("B1");
   const [userProfession, setUserProfession] = useState<string>("HEALTH");
+  const [userSubdomain, setUserSubdomain] = useState<string | null>(null);
   const [streakTrigger, setStreakTrigger] = useState<number>(0);
   const [showStreakToast, setShowStreakToast] = useState<boolean>(false);
   const [currentText, setCurrentText] = useState<GeneratedText | null>(null);
@@ -48,7 +49,7 @@ export default function Home() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('domain, target_domain, current_level, target_level')
+        .select('domain, target_domain, subdomain, current_level, target_level')
         .eq('id', uid)
         .single();
       if (data && !error) {
@@ -57,6 +58,7 @@ export default function Home() {
           const normDomain = ['IT', 'HEALTH', 'ACADEMIC'].includes(rawDomain) ? rawDomain : 'HEALTH';
           setUserProfession(normDomain);
         }
+        if (data.subdomain) setUserSubdomain(data.subdomain);
         if (data.target_level) setCurrentLevel(data.target_level);
       }
     } catch (_) {
@@ -75,6 +77,7 @@ export default function Home() {
           const normP = ['IT', 'HEALTH', 'ACADEMIC'].includes(p) ? p : 'HEALTH';
           setUserProfession(normP);
         }
+        if (user.user_metadata?.subdomain) setUserSubdomain(user.user_metadata.subdomain);
         if (user.user_metadata?.target_level) setCurrentLevel(user.user_metadata.target_level);
         loadUserProfile(user.id);
       }
@@ -90,6 +93,7 @@ export default function Home() {
           const normP = ['IT', 'HEALTH', 'ACADEMIC'].includes(p) ? p : 'HEALTH';
           setUserProfession(normP);
         }
+        if (activeUser.user_metadata?.subdomain) setUserSubdomain(activeUser.user_metadata.subdomain);
         if (activeUser.user_metadata?.target_level) setCurrentLevel(activeUser.user_metadata.target_level);
         loadUserProfile(activeUser.id);
       } else {
@@ -114,13 +118,14 @@ export default function Home() {
     window.location.href = `${BACKEND_URL}/export/${userId}?token=${token}`;
   };
 
-  const fetchNextText = async (targetLvl?: string, targetProf?: string) => {
+  const fetchNextText = async (targetLvl?: string, targetProf?: string, targetSub?: string | null) => {
     setLoading(true);
     setRating(0);
     setDifficulty(null);
     try {
       const rawDomain = targetProf || userProfession || "HEALTH";
       const domain = ['IT', 'HEALTH', 'ACADEMIC'].includes(rawDomain) ? rawDomain : 'HEALTH';
+      const sub = targetSub !== undefined ? targetSub : userSubdomain;
       const headers = await getAuthHeaders();
       const response = await axios.post(
         `${BACKEND_URL}/generate`,
@@ -128,6 +133,7 @@ export default function Home() {
           user_id: userId,
           target_level: targetLvl || currentLevel,
           target_domain: domain,
+          subdomain: sub || undefined,
         },
         { headers }
       );
@@ -138,12 +144,17 @@ export default function Home() {
     setLoading(false);
   };
 
-  const getProfessionBadge = (prof: string) => {
+  const getProfessionBadge = (prof: string, sub?: string | null) => {
+    if (sub === 'MEDIZIN') return '🩺 Arzt / Ärztin';
+    if (sub === 'PFLEGE') return '🏥 Pflegekraft';
+    if (sub === 'PHYSIO') return '🏋️ Physiotherapie';
+    if (sub === 'PHARMA') return '💊 Pharmazie';
+
     switch(prof) {
       case 'PFLEGE': return '🏥 Pflegekraft';
       case 'MEDIZIN': return '🩺 Arzt / Ärztin';
-      case 'PHYSIO': return '🤸 Physiotherapie';
-      case 'PHARMA': return '💊 Apotheke';
+      case 'PHYSIO': return '🏋️ Physiotherapie';
+      case 'PHARMA': return '💊 Pharmazie';
       case 'HEALTH': return '🏥 Medizin & Gesundheit';
       case 'IT': return '💻 IT & Software';
       case 'ACADEMIC': return '🎓 Akademisch';
@@ -325,7 +336,7 @@ export default function Home() {
               color: '#1A6E6E',
               border: '1.5px solid #1A6E6E'
             }}>
-              {getProfessionBadge(userProfession)}
+              {getProfessionBadge(userProfession, userSubdomain)}
             </span>
             <StreakWidget 
               userId={userId} 
@@ -460,7 +471,7 @@ export default function Home() {
         <Onboarding 
           userId={userId} 
           backendUrl={BACKEND_URL} 
-          onComplete={(registeredUser, _mastery, calibratedLevel, profession) => {
+          onComplete={(registeredUser, _mastery, calibratedLevel, profession, sub) => {
             if (registeredUser) {
               setUser(registeredUser);
               setUserId(registeredUser.id);
@@ -470,8 +481,11 @@ export default function Home() {
               const normP = ['IT', 'HEALTH', 'ACADEMIC'].includes(profession) ? profession : 'HEALTH';
               setUserProfession(normP);
             }
+            if (sub) {
+              setUserSubdomain(sub);
+            }
             setShowOnboarding(false);
-            fetchNextText(calibratedLevel, profession);
+            fetchNextText(calibratedLevel, profession, sub);
           }}
           onCancel={() => setShowOnboarding(false)}
         />

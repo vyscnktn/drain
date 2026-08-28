@@ -13,7 +13,7 @@ from app.services.llm_engine import client
 # Ensure environment variables (.env) are loaded
 load_dotenv()
 
-MODEL_NAME = "meta/llama-3.3-70b-instruct"
+MODEL_NAME = "meta/llama-4-maverick"
 logger = logging.getLogger(__name__)
 
 try:

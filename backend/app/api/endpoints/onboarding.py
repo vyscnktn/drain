@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Dict, Any
+import asyncio
 import time
 import logging
 
@@ -29,6 +30,7 @@ class OnboardingSubmitRequest(BaseModel):
     current_level: Literal['A1', 'A2', 'B1', 'B2', 'C1']
     target_level: Literal['A1', 'A2', 'B1', 'B2', 'C1']
     domain: Optional[Literal['IT', 'HEALTH', 'ACADEMIC']] = None
+    subdomain: Optional[str] = None
     full_name: Optional[str] = None
     email: Optional[str] = None
     ratings: List[RatingItem]
@@ -75,11 +77,12 @@ def _generate_single_calibration_text(
         anchor_lemmas = [a['lemma'] for a in anchors] if anchors else []
         target = targets[0] if targets else (anchors[0] if anchors else {"id": 1, "lemma": "lernen"})
 
+        effective_domain = subdomain or domain_tag
         text, passed, ratio = validate_and_generate(
             anchor_lemmas=anchor_lemmas,
             target_lemma=target,
             all_known_lemmas=all_known_lemmas,
-            domain=domain_tag,
+            domain=effective_domain,
             level=level,
             max_retries=1
         )
@@ -159,13 +162,23 @@ async def start_onboarding(request: Request, payload: OnboardingStartRequest):
         }
 
         # Generate ONLY the first text (Step 1)
-        text_1 = _generate_single_calibration_text(
-            user_id=payload.user_id,
-            domain_tag=domain_tag,
-            subdomain=payload.subdomain,
-            level=levels[0],
-            step=1
-        )
+        # Wrap sync function in asyncio.to_thread to avoid blocking the event loop,
+        # and apply a hard 40s timeout so the endpoint always responds within 45s.
+        try:
+            text_1 = await asyncio.wait_for(
+                asyncio.to_thread(
+                    _generate_single_calibration_text,
+                    user_id=payload.user_id,
+                    domain_tag=domain_tag,
+                    subdomain=payload.subdomain,
+                    level=levels[0],
+                    step=1,
+                ),
+                timeout=40.0,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"[Onboarding] Calibration text generation timed out (40s) for user {payload.user_id}")
+            raise HTTPException(status_code=503, detail="Der Dienst ist gerade überlastet, bitte erneut versuchen.")
 
         return {
             "calibration_texts": [text_1],
@@ -200,12 +213,16 @@ async def get_calibration_text(user_id: str, step: int):
         domain_tag = session_info.get("domain", "HEALTH")
         subdomain = session_info.get("subdomain")
         try:
-            fresh = _generate_single_calibration_text(
-                user_id,
-                domain_tag,
-                subdomain,
-                levels[step - 1],
-                step
+            fresh = await asyncio.wait_for(
+                asyncio.to_thread(
+                    _generate_single_calibration_text,
+                    user_id,
+                    domain_tag,
+                    subdomain,
+                    levels[step - 1],
+                    step,
+                ),
+                timeout=40.0,
             )
             return {"ready": True, "text": fresh}
         except Exception:
@@ -278,12 +295,16 @@ async def submit_onboarding(request: Request, payload: OnboardingSubmitRequest, 
                 }
             elif cached_text and cached_text.get("status") == "error":
                 try:
-                    fresh = _generate_single_calibration_text(
-                        payload.user_id,
-                        domain_tag,
-                        subdomain,
-                        next_level,
-                        next_step
+                    fresh = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            _generate_single_calibration_text,
+                            payload.user_id,
+                            domain_tag,
+                            subdomain,
+                            next_level,
+                            next_step,
+                        ),
+                        timeout=40.0,
                     )
                     return {
                         "status": "next",
@@ -325,6 +346,8 @@ async def submit_onboarding(request: Request, payload: OnboardingSubmitRequest, 
                 "target_level": payload.target_level,
                 "current_level": payload.current_level
             }
+            if payload.subdomain:
+                profile_payload["subdomain"] = payload.subdomain
             if user_email:
                 profile_payload["email"] = user_email
             if user_name:
