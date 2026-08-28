@@ -263,10 +263,12 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
       setErrorMsg(null);
       try {
         // 1. Create Supabase Auth Account
+        const redirectUrl = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_SITE_URL || undefined);
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
           password,
           options: {
+            emailRedirectTo: redirectUrl,
             data: {
               full_name: fullName,
               profession: profession,

@@ -102,7 +102,21 @@ Frontend ve Backend'in birbiriyle güvenli iletişim kurabilmesi için:
 
 ---
 
-## 🧪 5. Canlı Smoke Testi Çalıştırma
+## 📧 5. Supabase E-Posta Doğrulama & Yönlendirme Ayarı (Redirect URLs)
+
+Kayıt olan kullanıcıların doğrulama e-postasına tıkladığında canlı Amplify adresinize yönlenmesi için:
+
+1. **Supabase Dashboard** → **Authentication** → **URL Configuration** menüsüne gidin.
+2. **Site URL**: Canlı frontend adresinizi girin (örn: `https://main.d1234567.amplifyapp.com`).
+3. **Redirect URLs** (İzin Verilen Yönlendirme Listesi):
+   - `http://localhost:3000/**` *(Yerel geliştirme için)*
+   - `https://*.amplifyapp.com/**` *(Amplify preview ve canlı domainleri için)*
+   - `https://your-custom-domain.com/**` *(Özel domaininiz için)*
+4. **Save** butonuna basın.
+
+---
+
+## 🧪 6. Canlı Smoke Testi Çalıştırma
 
 Deploy tamamlandıktan sonra lokal makinenizden API sağlığını doğrulamak için:
 
