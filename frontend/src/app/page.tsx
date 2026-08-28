@@ -127,6 +127,11 @@ export default function Home() {
       const domain = ['IT', 'HEALTH', 'ACADEMIC'].includes(rawDomain) ? rawDomain : 'HEALTH';
       const sub = targetSub !== undefined ? targetSub : userSubdomain;
       const headers = await getAuthHeaders();
+      if (!headers.Authorization) {
+        console.warn("[Reader] No active auth session token found. Skipping protected fetch.");
+        setLoading(false);
+        return;
+      }
       const response = await axios.post(
         `${BACKEND_URL}/generate`,
         {
@@ -138,8 +143,14 @@ export default function Home() {
         { headers }
       );
       setCurrentText(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch text", error);
+      if (error?.response?.status === 401) {
+        console.warn("[Reader] 401 Unauthorized received. Session is invalid or email unconfirmed.");
+        setUser(null);
+        setAuthModalMode('login');
+        setShowAuthModal(true);
+      }
     }
     setLoading(false);
   };
@@ -301,17 +312,27 @@ export default function Home() {
           userId={userId}
           backendUrl={BACKEND_URL}
           onCancel={user ? () => setShowOnboarding(false) : undefined}
-          onComplete={(newAuthUser, mastery, level, prof) => {
-            if (newAuthUser) {
+          onComplete={(newAuthUser, _mastery, level, prof, sub, hasSession) => {
+            // Persist profession & level from onboarding into state
+            if (prof) {
+              const normP = ['IT', 'HEALTH', 'ACADEMIC'].includes(prof) ? prof : 'HEALTH';
+              setUserProfession(normP);
+            }
+            if (sub) setUserSubdomain(sub);
+            if (level) setCurrentLevel(level);
+
+            setShowOnboarding(false);
+
+            if (hasSession && newAuthUser) {
               setUser(newAuthUser);
               setUserId(newAuthUser.id);
+              fetchNextText(level, prof, sub);
+              fetchProgress();
+            } else {
+              // Email confirmation strictly required -> prompt login
+              setAuthModalMode('login');
+              setShowAuthModal(true);
             }
-            // Persist profession & level from onboarding into state
-            if (prof) setUserProfession(prof);
-            if (level) setCurrentLevel(level);
-            setShowOnboarding(false);
-            fetchNextText(level, prof);
-            fetchProgress();
           }}
         />
       </main>
@@ -467,29 +488,7 @@ export default function Home() {
         )}
       </header>
 
-      {showOnboarding ? (
-        <Onboarding 
-          userId={userId} 
-          backendUrl={BACKEND_URL} 
-          onComplete={(registeredUser, _mastery, calibratedLevel, profession, sub) => {
-            if (registeredUser) {
-              setUser(registeredUser);
-              setUserId(registeredUser.id);
-            }
-            if (calibratedLevel) setCurrentLevel(calibratedLevel);
-            if (profession) {
-              const normP = ['IT', 'HEALTH', 'ACADEMIC'].includes(profession) ? profession : 'HEALTH';
-              setUserProfession(normP);
-            }
-            if (sub) {
-              setUserSubdomain(sub);
-            }
-            setShowOnboarding(false);
-            fetchNextText(calibratedLevel, profession, sub);
-          }}
-          onCancel={() => setShowOnboarding(false)}
-        />
-      ) : showGraph ? (
+      {showGraph ? (
         <KnowledgeGraph 
           userId={userId} 
           backendUrl={BACKEND_URL} 

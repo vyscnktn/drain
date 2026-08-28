@@ -21,7 +21,7 @@ interface CalibrationText {
 interface OnboardingProps {
   userId: string;
   backendUrl: string;
-  onComplete: (user: any, calibratedMastery: number, level: string, profession: string, subdomain?: string | null) => void;
+  onComplete: (user: any, calibratedMastery: number, level: string, profession: string, subdomain?: string | null, hasSession?: boolean) => void;
   onCancel?: () => void;
 }
 
@@ -139,6 +139,7 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
   const [ratings, setRatings] = useState<Array<{ text_id: number; rating: number; difficulty: string }>>([]);
   const [resultMastery, setResultMastery] = useState<number>(0.55);
   const [registeredUser, setRegisteredUser] = useState<any>(null);
+  const [hasActiveSession, setHasActiveSession] = useState<boolean>(false);
 
   const t = UI_STRINGS[uiLang];
 
@@ -280,11 +281,30 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
 
         if (authError) throw authError;
 
-        const activeUser = authData.user;
+        let activeUser = authData.user;
+        let hasSession = !!authData.session;
+
+        // 2. Attempt immediate auto-login in case email confirmation is disabled or auto-confirmed
+        if (!hasSession) {
+          try {
+            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+              email,
+              password
+            });
+            if (!signInError && signInData?.session) {
+              activeUser = signInData.user;
+              hasSession = true;
+            }
+          } catch (_) {
+            // Auto-login skipped if confirmation is strictly required
+          }
+        }
+
         const newUserId = activeUser ? activeUser.id : userId;
         setRegisteredUser(activeUser);
+        setHasActiveSession(hasSession);
 
-        // 2. Save domain & level into the profiles table (real user_id now available)
+        // 3. Save domain & level into the profiles table (real user_id now available)
         if (newUserId && newUserId !== userId) {
           const { error: profileError } = await supabase
             .from('profiles')
@@ -753,36 +773,65 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
             {t.doneSub} <strong>{targetLevel}</strong> ({t.doneMastery} {(resultMastery * 100).toFixed(0)}%).
           </p>
 
-          {/* Email Verification Alert Banner */}
-          <div style={{
-            margin: '0 auto 2rem',
-            maxWidth: '480px',
-            padding: '12px 16px',
-            background: '#eff6ff',
-            border: '1.5px solid #60a5fa',
-            borderRadius: '12px',
-            color: '#1e40af',
-            fontSize: '0.88rem',
-            textAlign: 'left',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem'
-          }}>
-            <Mail size={22} color="#2563eb" style={{ flexShrink: 0 }} />
-            <div>
-              <strong style={{ color: '#1e3a8a' }}>Bestätigungs-E-Mail gesendet!</strong>
-              <p style={{ margin: '2px 0 0 0', fontSize: '0.82rem', color: '#1e40af' }}>
-                Wir haben eine Bestätigungs-E-Mail an <u>{email}</u> gesendet. Bitte schaue in dein Postfach, um dein Konto zu verifizieren.
-              </p>
+          {/* Status Alert Banner */}
+          {hasActiveSession ? (
+            <div style={{
+              margin: '0 auto 2rem',
+              maxWidth: '480px',
+              padding: '12px 16px',
+              background: '#f0fdf4',
+              border: '1.5px solid #86efac',
+              borderRadius: '12px',
+              color: '#166534',
+              fontSize: '0.88rem',
+              textAlign: 'left',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <CheckCircle size={22} color="#16a34a" style={{ flexShrink: 0 }} />
+              <div>
+                <strong style={{ color: '#14532d' }}>Konto erfolgreich aktiviert!</strong>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.82rem', color: '#166534' }}>
+                  Dein Profil ist startklar. Du kannst nun direkt mit deiner persönlichen Lese-Reise beginnen.
+                </p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{
+              margin: '0 auto 2rem',
+              maxWidth: '480px',
+              padding: '12px 16px',
+              background: '#eff6ff',
+              border: '1.5px solid #60a5fa',
+              borderRadius: '12px',
+              color: '#1e40af',
+              fontSize: '0.88rem',
+              textAlign: 'left',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <Mail size={22} color="#2563eb" style={{ flexShrink: 0 }} />
+              <div>
+                <strong style={{ color: '#1e3a8a' }}>Bestätigungs-E-Mail gesendet!</strong>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.82rem', color: '#1e40af' }}>
+                  Wir haben eine Aktivierungs-E-Mail an <u>{email}</u> gesendet. Bitte klicke auf den Link in der E-Mail, um dein Konto zu bestätigen.
+                </p>
+              </div>
+            </div>
+          )}
 
           <button
-            onClick={() => onComplete(registeredUser, resultMastery, targetLevel, profession, subdomain)}
+            onClick={() => onComplete(registeredUser, resultMastery, targetLevel, profession, subdomain, hasActiveSession)}
             className="btn btn-primary"
             style={{ padding: '14px 32px', fontSize: '1.05rem', background: '#1A6E6E', borderRadius: '12px' }}
           >
-            {t.startJourneyBtn} <ChevronRight size={20} />
+            {hasActiveSession ? (
+              <>{t.startJourneyBtn} <ChevronRight size={20} /></>
+            ) : (
+              <>E-Mail bestätigt? Jetzt Anmelden <ChevronRight size={20} /></>
+            )}
           </button>
         </div>
       )}
