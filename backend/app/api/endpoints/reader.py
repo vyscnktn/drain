@@ -169,7 +169,8 @@ async def rate_reading(
         if not words_in_text.data:
             return {"status": "success", "message": "Bewertung gespeichert."}
             
-        diff = request.difficulty
+        diff = payload.difficulty
+        rating_val = payload.rating
         
         for record in words_in_text.data:
             word_id = record['word_id']
@@ -188,16 +189,16 @@ async def rate_reading(
                     exposure = current['exposure_count']
                     
                     delta = 0
-                    if request.rating <= 2:
+                    if rating_val <= 2:
                         delta = -0.1
-                    elif request.rating == 3:
+                    elif rating_val == 3:
                         delta = 0
-                    elif request.rating >= 4:
-                        if diff in ("Tam kıvam", "Genau richtig"):
+                    elif rating_val >= 4:
+                        if diff in ("Tam kıvam", "Tam kıvamında", "Genau richtig", "Just right", "Perfecto"):
                             delta = 0.2 if is_target else 0.05
-                        elif diff in ("Çok kolay", "Zu einfach"):
+                        elif diff in ("Çok kolay", "Zu einfach", "Too easy", "Demasiado fácil"):
                             delta = 0.05 if is_target else 0.01
-                        elif diff in ("Çok zor", "Zu schwer"):
+                        elif diff in ("Çok zor", "Zu schwer", "Too hard", "Demasiado difícil"):
                             delta = -0.05
                         else:
                             delta = 0.1 if is_target else 0.02
@@ -205,7 +206,7 @@ async def rate_reading(
                     new_mastery = max(0.0, min(1.0, mastery + delta))
                     
                     supabase_admin.table('user_word_state') \
-                        .update({"mastery_score": new_mastery, "exposure_count": exposure + 1, "last_rating": request.rating}) \
+                        .update({"mastery_score": new_mastery, "exposure_count": exposure + 1, "last_rating": rating_val}) \
                         .eq('user_id', user_id) \
                         .eq('word_id', word_id) \
                         .execute()
@@ -216,7 +217,7 @@ async def rate_reading(
                         "word_id": word_id,
                         "mastery_score": initial_mastery,
                         "exposure_count": 1,
-                        "last_rating": request.rating
+                        "last_rating": rating_val
                     }).execute()
             except Exception as e:
                 logger.warning(f"[Rate] Skipping word_state update for user {user_id}: {e}")

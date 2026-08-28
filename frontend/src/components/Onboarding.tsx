@@ -6,6 +6,7 @@ import axios from 'axios';
 import styles from '../app/page.module.css';
 import { supabase } from '@/lib/supabaseClient';
 import { API_URL } from '@/lib/api';
+import { formatAuthError } from '@/lib/authErrorMapper';
 
 type Language = 'EN' | 'ES' | 'TR' | 'DE';
 
@@ -339,7 +340,8 @@ export default function Onboarding({ userId, backendUrl, onComplete, onCancel }:
         setStep('done');
       } catch (err: any) {
         console.error("Failed to complete registration and onboarding", err);
-        setErrorMsg(err.message || "Konto konnte nicht erstellt oder Kalibrierung nicht gespeichert werden.");
+        const formatted = formatAuthError(err, uiLang);
+        setErrorMsg(formatted.message || err?.message || "Konto konnte nicht erstellt oder Kalibrierung nicht gespeichert werden.");
       }
       setLoading(false);
     }
