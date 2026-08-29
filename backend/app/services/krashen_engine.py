@@ -137,15 +137,22 @@ def select_reading_words(user_id: str, domain: str = "HEALTH", subdomain: str = 
     
     # If no targets found via graph, fallback to random unmastered domain words
     if not targets:
-        try:
-            if subdomain:
-                all_words_resp = supabase_admin.table('words').select('*').contains('subdomains', [subdomain]).limit(100).execute()
-            else:
+        all_words_resp = None
+        if subdomain:
+            try:
+                all_words_resp = supabase_admin.table('words').select('*').eq('source_ref', subdomain).limit(100).execute()
+                if not all_words_resp.data:
+                    all_words_resp = supabase_admin.table('words').select('*').eq('notes', subdomain).limit(100).execute()
+            except Exception:
+                pass
+        
+        if not all_words_resp or not all_words_resp.data:
+            try:
                 all_words_resp = supabase_admin.table('words').select('*').eq('domain', domain).limit(100).execute()
-        except Exception as e:
-            all_words_resp = supabase_admin.table('words').select('*').eq('domain', domain).limit(100).execute()
+            except Exception:
+                all_words_resp = supabase_admin.table('words').select('*').limit(100).execute()
             
-        candidate_words = [w for w in all_words_resp.data if w['id'] not in anchor_ids and is_valid_target_word(w)]
+        candidate_words = [w for w in (all_words_resp.data if all_words_resp else []) if w['id'] not in anchor_ids and is_valid_target_word(w)]
         if not candidate_words:
             candidate_words = supabase_admin.table('words').select('*').limit(100).execute().data
             candidate_words = [w for w in candidate_words if w['id'] not in anchor_ids and is_valid_target_word(w)]

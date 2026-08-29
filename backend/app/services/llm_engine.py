@@ -311,18 +311,22 @@ def _call_nim_raw(user_prompt: str, timeout: float = PROVIDER_TIMEOUT) -> str:
     if not nim_client:
         raise RuntimeError("NIM_API_KEY not configured")
 
-    response = nim_client.chat.completions.create(
-        model="meta/llama-4-maverick",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.8,
-        max_tokens=512,
-    )
-    if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
-        raise ValueError("NIM returned an empty or invalid response")
-    return response.choices[0].message.content.strip()
+    for model_name in ["meta/llama-3.2-11b-vision-instruct", "meta/llama-3.2-90b-vision-instruct"]:
+        try:
+            response = nim_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.8,
+                max_tokens=512,
+            )
+            if response.choices and response.choices[0].message and response.choices[0].message.content:
+                return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.warning(f"[LLM] NIM model {model_name} failed: {e}")
+    raise ValueError("NIM returned an empty or invalid response")
 
 
 def _call_nim_with_timeout(user_prompt: str, timeout: float = PROVIDER_TIMEOUT) -> str:
