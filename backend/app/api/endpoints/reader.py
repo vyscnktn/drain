@@ -31,7 +31,7 @@ class RatingRequest(BaseModel):
 
 @router.post("/generate")
 @limiter.limit("20/minute")
-async def generate_reading(
+def generate_reading(
     request: Request,
     payload: ReadingRequest,
     current_user_id: str = Depends(get_current_user)
@@ -132,8 +132,8 @@ async def generate_reading(
 
 
 @router.post("/rate")
-@limiter.limit("30/minute")
-async def rate_reading(
+@limiter.limit("60/minute")
+def rate_reading(
     request: Request,
     payload: RatingRequest,
     current_user_id: str = Depends(get_current_user)
@@ -233,7 +233,7 @@ async def rate_reading(
 
 @router.get("/progress/{user_id}")
 @limiter.limit("60/minute")
-async def get_progress(
+def get_progress(
     request: Request,
     user_id: str,
     current_user_id: str = Depends(get_current_user)
@@ -268,7 +268,7 @@ async def get_progress(
 
 @router.get("/export/{user_id}")
 @limiter.limit("10/minute")
-async def export_digital_brain(
+def export_digital_brain(
     request: Request,
     user_id: str,
     current_user_id: str = Depends(get_current_user)
@@ -323,7 +323,7 @@ async def export_digital_brain(
 
 @router.get("/graph/{user_id}")
 @limiter.limit("60/minute")
-async def get_user_knowledge_graph(
+def get_user_knowledge_graph(
     request: Request,
     user_id: str,
     current_user_id: str = Depends(get_current_user)
@@ -490,7 +490,7 @@ def calculate_user_streak(user_id: str):
 
 @router.get("/streak/{user_id}")
 @limiter.limit("60/minute")
-async def get_user_streak(
+def get_user_streak(
     request: Request,
     user_id: str,
     current_user_id: str = Depends(get_current_user)

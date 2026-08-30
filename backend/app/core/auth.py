@@ -66,7 +66,7 @@ def verify_jwt_signature(token: str) -> str:
         headers={"WWW-Authenticate": "Bearer"}
     )
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security_scheme)) -> str:
+def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security_scheme)) -> str:
     """
     FastAPI dependency for protected routes.
     Strictly validates Authorization: Bearer <token> against Supabase JWKS/Auth.

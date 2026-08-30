@@ -27,19 +27,23 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS whitelist from FRONTEND_ORIGIN env var (Görev 4)
-frontend_origin_env = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000,http://127.0.0.1:3000")
+# CORS whitelist from FRONTEND_ORIGIN env var
+frontend_origin_env = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000,http://127.0.0.1:3000,https://drain-umber-ten.vercel.app")
 allowed_origins = [origin.strip() for origin in frontend_origin_env.split(",") if origin.strip()]
 
-# Ensure Supabase callback origin is included
-if "https://ypqqoefegnshavxsznmq.supabase.co" not in allowed_origins:
-    allowed_origins.append("https://ypqqoefegnshavxsznmq.supabase.co")
+for default_origin in [
+    "https://drain-umber-ten.vercel.app",
+    "https://ypqqoefegnshavxsznmq.supabase.co"
+]:
+    if default_origin not in allowed_origins:
+        allowed_origins.append(default_origin)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
