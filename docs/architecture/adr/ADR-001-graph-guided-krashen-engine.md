@@ -20,11 +20,11 @@ We implemented a **Graph-Constrained Closed-Loop Generation Engine** that combin
 
 ```mermaid
 flowchart LR
-    A[User Mastery State] -->|Extract Anchors >= 0.8| B(Graph Traversal: word_edges)
-    B -->|Discover Target Lemma +1| C[LLM Prompt Assembly]
-    C -->|Generate Passage| D[spaCy Lemmatizer & Evaluator]
-    D -->|Unknown <= 5%| E[Store & Deliver to Learner]
-    D -->|Unknown > 5%| F[Single-Retry Re-prompt]
+    A["User Mastery State"] -->|"Extract Anchors (>= 0.8)"| B["Graph Traversal: word_edges"]
+    B -->|"Discover Target Lemma (+1)"| C["LLM Prompt Assembly"]
+    C -->|"Generate Passage"| D["spaCy Lemmatizer & Evaluator"]
+    D -->|"Comprehensible (Unknown <= 5%)"| E["Store & Deliver to Learner"]
+    D -->|"Unknown > 5%"| F["Single-Retry Re-prompt"]
     F --> D
 ```
 

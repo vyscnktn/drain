@@ -16,28 +16,29 @@ Unlike traditional flashcard apps that promote isolated rote memorization, or st
 
 ```mermaid
 graph LR
-    subgraph Input [Learner Context]
-        U[User Profile & Domain]
-        M[Mastery Map: user_word_state]
+    subgraph InputTier ["Learner Context"]
+        U["User Profile & Domain"]
+        M["Mastery Map: user_word_state"]
     end
 
-    subgraph CoreEngine [Drain AI Solution Architecture]
-        K[Krashen Pedagogical Engine]
-        G[Lexical Knowledge Graph]
-        LLM[Resilient Multi-LLM Gateway<br/>Gemini 2.5 Flash + NIM Fallback]
-        V[spaCy NLP Evaluator & Ratio Loop]
+    subgraph CoreEngine ["Drain AI Solution Architecture"]
+        K["Krashen Pedagogical Engine"]
+        G["Lexical Knowledge Graph"]
+        LLM["Resilient Multi-LLM Gateway<br/>Gemini 2.5 Flash + NIM Fallback"]
+        V["spaCy NLP Evaluator & Ratio Loop"]
     end
 
-    subgraph Output [Delivered Experience]
-        R[CEFR-Calibrated Professional Reading Passage<br/>95% Known / 5% Novel Target Word]
+    subgraph OutputTier ["Delivered Experience"]
+        R["CEFR-Calibrated Professional Reading Passage<br/>95% Known / 5% Novel Target Word"]
     end
 
-    U & M --> K
+    U --> K
+    M --> K
     K <--> G
-    K -->|Assembled Prompt| LLM
-    LLM -->|Candidate Passage| V
-    V -->|Validated (Unknown <= 5%)| R
-    V -.->|Retry if Drift > 5%| LLM
+    K -->|"Assembled Prompt"| LLM
+    LLM -->|"Candidate Passage"| V
+    V -->|"Comprehensible (Unknown <= 5%)"| R
+    V -.->|"Regenerate if Drift > 5%"| LLM
 ```
 
 ---
@@ -58,43 +59,43 @@ graph LR
 
 ```mermaid
 graph TB
-    subgraph ClientLayer [Client Tier — Web & Mobile Responsive]
-        SPA[Next.js 15 App Router<br/>TypeScript, React, Tailwind CSS]
+    subgraph ClientLayer ["Client Tier (Web & Mobile Responsive)"]
+        SPA["Next.js 15 App Router<br/>TypeScript, React, Tailwind CSS"]
     end
 
-    subgraph ServiceLayer [Application Tier — Containerized FastAPI Service]
-        Router[FastAPI API Gateway<br/>Uvicorn, Pydantic, CORS, Logging]
-        KrashenSvc[Krashen Pedagogical Engine<br/>Anchor & Candidate Discovery]
-        LLMSvc[Resilient Multi-LLM Gateway<br/>ThreadPool Timeout Manager]
-        NLPValidator[NLP & Ratio Validator<br/>spaCy German Model + Regex Tokenizer]
+    subgraph ServiceLayer ["Application Tier (Containerized FastAPI Service)"]
+        Router["FastAPI API Gateway<br/>Uvicorn, Pydantic, CORS, Logging"]
+        KrashenSvc["Krashen Pedagogical Engine<br/>Anchor & Candidate Discovery"]
+        LLMSvc["Resilient Multi-LLM Gateway<br/>ThreadPool Timeout Manager"]
+        NLPValidator["NLP & Ratio Validator<br/>spaCy German Model + Regex Tokenizer"]
     end
 
-    subgraph DataLayer [Persistence & Auth Tier — Supabase Managed Cloud]
-        Auth[Supabase GoTrue<br/>JWT Session Management]
-        PostgresDB[(PostgreSQL 15+<br/>profiles, user_word_state)]
-        GraphTable[(word_edges<br/>Adjacency Matrix)]
-        VectorExt[(pgvector<br/>768-d Semantic Embeddings)]
+    subgraph DataLayer ["Persistence & Auth Tier (Supabase Managed Cloud)"]
+        Auth["Supabase GoTrue<br/>JWT Session Management"]
+        PostgresDB[("PostgreSQL 15+<br/>profiles, user_word_state")]
+        GraphTable[("word_edges<br/>Adjacency Matrix")]
+        VectorExt[("pgvector<br/>768-d Semantic Embeddings")]
     end
 
-    subgraph ExternalAI [Upstream LLM Providers]
-        GeminiCloud[Google Gemini 2.5 Flash<br/>Primary Provider]
-        NIMCloud[NVIDIA NIM Llama-3.2<br/>Fallback Provider]
+    subgraph ExternalAI ["Upstream LLM Providers"]
+        GeminiCloud["Google Gemini 2.5 Flash<br/>Primary Provider"]
+        NIMCloud["NVIDIA NIM Llama-3.2<br/>Fallback Provider"]
     end
 
-    SPA -->|Authenticated REST / Bearer JWT| Router
-    SPA -->|Direct Read / RLS Enforced| PostgresDB
-    SPA -->|Session Auth| Auth
+    SPA -->|"Authenticated REST / Bearer JWT"| Router
+    SPA -->|"Direct Read / RLS Enforced"| PostgresDB
+    SPA -->|"Session Auth"| Auth
 
     Router --> KrashenSvc
     KrashenSvc --> PostgresDB
     KrashenSvc --> GraphTable
 
     Router --> LLMSvc
-    LLMSvc -->|Provider Timeout 25s| GeminiCloud
-    LLMSvc -.->|Failover on Error/Timeout| NIMCloud
+    LLMSvc -->|"Provider Timeout 25s"| GeminiCloud
+    LLMSvc -.->|"Failover on Error/Timeout"| NIMCloud
 
     LLMSvc --> NLPValidator
-    NLPValidator -->|Commit Reading Record| PostgresDB
+    NLPValidator -->|"Commit Reading Record"| PostgresDB
 ```
 
 ---

@@ -24,20 +24,20 @@ sequenceDiagram
     Client->>App: POST /api/v1/reader/generate
     Note over App: Start Chain Budget (45s max)
     
-    App->>Gemini: Call Gemini (Provider Timeout: 25s)
-    alt Gemini Success (< 25s)
+    App->>Gemini: Call Gemini (Provider Timeout 25s)
+    alt Gemini Success (Under 25s)
         Gemini-->>App: Return Generated Text
         App-->>Client: 200 OK (Content + Ratio Metrics)
     else Gemini Error (Timeout / 429 / 503)
         Gemini--xApp: Failure Logged
         Note over App: Immediate Fallback to Secondary
-        App->>NIM: Call NVIDIA NIM (Remaining Budget: min(25s, 45s-elapsed))
+        App->>NIM: Call NVIDIA NIM (Remaining Budget)
         alt NIM Success
             NIM-->>App: Return Generated Text
             App-->>Client: 200 OK (Content + Fallback Telemetry)
         else NIM Failure
             NIM--xApp: Both Providers Exhausted
-            App-->>Client: 503 Service Unavailable ("Der Dienst ist überlastet...")
+            App-->>Client: 503 Service Unavailable (Overload Notification)
         end
     end
 ```

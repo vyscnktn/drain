@@ -13,30 +13,30 @@ We implemented a **Defense-in-Depth Zero-Trust Boundary** with strict client/ser
 
 ```mermaid
 graph TD
-    subgraph Client Tier [Public / Untrusted Zone]
-        ClientApp[Next.js 15 App Router]
-        AnonClient[Supabase Anon Client / Publishable Key]
+    subgraph ClientTier ["Public / Untrusted Zone"]
+        ClientApp["Next.js 15 App Router"]
+        AnonClient["Supabase Anon Client / Publishable Key"]
     end
 
-    subgraph App Tier [Trusted Service Zone]
-        FastAPIServer[FastAPI Microservice]
-        ServiceRoleClient[Supabase Admin Client / Service Role Key]
-        LLMGateway[Gemini & NVIDIA NIM Clients]
+    subgraph AppTier ["Trusted Service Zone"]
+        FastAPIServer["FastAPI Microservice"]
+        ServiceRoleClient["Supabase Admin Client / Service Role Key"]
+        LLMGateway["Gemini & NVIDIA NIM Clients"]
     end
 
-    subgraph Data Tier [Persistence Zone - Supabase Postgres]
-        RLSEnforcedTables[(User Scoped Tables: profiles, user_word_state, generated_texts)]
-        PublicTables[(Public Lexicon: words, word_edges)]
+    subgraph DataTier ["Persistence Zone - Supabase Postgres"]
+        RLSEnforcedTables[("User Scoped Tables: profiles, user_word_state, generated_texts")]
+        PublicTables[("Public Lexicon: words, word_edges")]
     end
 
-    ClientApp -->|Read Own Data: auth.uid = user_id| AnonClient
-    AnonClient -->|Enforced by RLS| RLSEnforcedTables
-    AnonClient -->|Public Read| PublicTables
+    ClientApp -->|"Read Own Data: auth.uid = user_id"| AnonClient
+    AnonClient -->|"Enforced by RLS"| RLSEnforcedTables
+    AnonClient -->|"Public Read"| PublicTables
 
-    ClientApp -->|Authenticated Mutation Requests| FastAPIServer
-    FastAPIServer -->|Verify Bearer JWT & Orchestrate| LLMGateway
-    FastAPIServer -->|Bypass RLS via Service Role| ServiceRoleClient
-    ServiceRoleClient -->|Atomic Writes & Analytics| RLSEnforcedTables
+    ClientApp -->|"Authenticated Mutation Requests"| FastAPIServer
+    FastAPIServer -->|"Verify Bearer JWT & Orchestrate"| LLMGateway
+    FastAPIServer -->|"Bypass RLS via Service Role"| ServiceRoleClient
+    ServiceRoleClient -->|"Atomic Writes & Analytics"| RLSEnforcedTables
 ```
 
 ### Core Tenets of the Security Architecture
